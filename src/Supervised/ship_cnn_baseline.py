@@ -1,4 +1,3 @@
-
 import os
 import random
 
@@ -10,12 +9,9 @@ from sklearn.model_selection import train_test_split
 
 import tensorflow as tf
 from tensorflow import keras
-from tensorflow.keras import layers
+layers = keras.layers
 
-# -------------------------------------------------------------------
 # CONFIG
-# -------------------------------------------------------------------
-
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 DATA_DIR = os.path.join(PROJECT_ROOT, "data")
 
@@ -39,18 +35,33 @@ os.makedirs(RESULTS_DIR, exist_ok=True)
 
 # Set all random seeds for reproducibility
 os.environ['PYTHONHASHSEED'] = str(SEED)
-os.environ['TF_DETERMINISTIC_OPS'] = '1'
-os.environ['TF_CUDNN_DETERMINISTIC'] = '1'
-os.environ['TF_DISABLE_SEGMENT_REDUCTION_OP_DETERMINISM_EXCEPTIONS'] = '1'
+# os.environ['TF_DETERMINISTIC_OPS'] = '1'
+# os.environ['TF_CUDNN_DETERMINISTIC'] = '1'
+# os.environ['TF_DISABLE_SEGMENT_REDUCTION_OP_DETERMINISM_EXCEPTIONS'] = '1'
 
 # Configure TensorFlow for deterministic operations
 tf.random.set_seed(SEED)
 np.random.seed(SEED)
 random.seed(SEED)
-tf.config.threading.set_inter_op_parallelism_threads(1)
-tf.config.threading.set_intra_op_parallelism_threads(1)
+# tf.config.threading.set_inter_op_parallelism_threads(1)
+# tf.config.threading.set_intra_op_parallelism_threads(1)
 tf.keras.utils.set_random_seed(SEED)
-tf.config.experimental.enable_op_determinism()
+# tf.config.experimental.enable_op_determinism()
+
+print(f"TensorFlow Version: {tf.__version__}")
+print(f"Devices: {tf.config.list_physical_devices()}")
+
+# Configure GPU memory growth
+gpus = tf.config.experimental.list_physical_devices('GPU')
+if gpus:
+    try:
+        for gpu in gpus:
+            tf.config.experimental.set_memory_growth(gpu, True)
+        print(f"GPU devices found: {gpus}")
+    except RuntimeError as e:
+        print(f"GPU configuration error: {e}")
+else:
+    print("No GPU devices found - training will use CPU")
 
 # -------------------------------------------------------------------
 # 1. LOAD CSV & BUILD PATHS
@@ -107,9 +118,11 @@ def process_example(path, label):
 
 def make_dataset(paths, labels, shuffle=False):
     ds = tf.data.Dataset.from_tensor_slices((paths, labels))
-    ds = ds.map(process_example, num_parallel_calls=tf.data.AUTOTUNE)
     if shuffle:
         ds = ds.shuffle(buffer_size=len(paths), seed=SEED)
+    ds = ds.map(process_example, num_parallel_calls=4)
+    # Cache images in RAM to speed up subsequent epochs
+    ds = ds.cache()
     ds = ds.batch(BATCH_SIZE).prefetch(tf.data.AUTOTUNE)
     return ds
 
@@ -208,7 +221,7 @@ else:
         train_ds,
         validation_data=val_ds,
         epochs=EPOCHS,
-        verbose=2  # Show progress bar with metrics (0 = silent, 1 = progress bar, 2 = one line per epoch)
+        verbose=1  # Show progress bar with metrics (0 = silent, 1 = progress bar, 2 = one line per epoch)
     )
     # Save the model
     model.save(MODEL_PATH)
